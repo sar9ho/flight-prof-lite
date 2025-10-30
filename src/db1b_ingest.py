@@ -34,7 +34,7 @@ def build_fact_fares(db1b_csv="DB1B_MARKET_2023.csv", carrier="WN"):
     pax_col        = _first(df, ["PASSENGERS","PAX"])
     avg_fare_col   = next((c for c in ["AVERAGE_FARE","AVG_FARE","FARE"] if c in df.columns), None)
 
-    # filter 4 Southwest
+    # filter for Southwest
     df[carrierc] = df[carrierc].astype(str).str.strip().str.upper()
     df = df[df[carrierc] == carrier].copy()
 
@@ -43,7 +43,7 @@ def build_fact_fares(db1b_csv="DB1B_MARKET_2023.csv", carrier="WN"):
         if c and c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    # build monthly pax shares from T-100 (by quarter, OD, month) 
+    # build monthly pax shares from T-100 (by quarter, OD, month)
     seg = pd.read_csv(WORK/"fact_segments.csv", dtype={"origin":str,"dest":str})
     seg["year"]  = pd.to_datetime(seg["month"]).dt.year
     seg["mnum"]  = pd.to_datetime(seg["month"]).dt.month
@@ -65,7 +65,7 @@ def build_fact_fares(db1b_csv="DB1B_MARKET_2023.csv", carrier="WN"):
     share_map = {(int(r.year), int(r.qtr), int(r.mnum), str(r.origin)[:3], str(r.dest)[:3]): float(r.share)
                  for r in w.itertuples(index=False)}
 
-    # expand DB1B quarter to months using T-100 shares (fallback 1/3) 
+    # expand DB1B quarter to months using T-100 shares (fallback 1/3)
     rows = []
     for _, r in df.iterrows():
         y     = int(r[year])
@@ -76,7 +76,6 @@ def build_fact_fares(db1b_csv="DB1B_MARKET_2023.csv", carrier="WN"):
         rev_q = float(r[fare_total_col]) if fare_total_col else float(r.get(avg_fare_col, 0.0)) * pax_q
 
         months = _q_to_months(q)
-        # if no shares exist for this OD/quarter, use equal thirds
         fallback_share = 1.0/3.0
         for m in months:
             sh = share_map.get((y, q, m, o, d), np.nan)
@@ -92,11 +91,11 @@ def build_fact_fares(db1b_csv="DB1B_MARKET_2023.csv", carrier="WN"):
 
     fares_m = pd.DataFrame(rows)
 
-    # aggregate to unique month+OD (DB1B has many samples per market) 
+    # aggregate to unique month+OD (DB1B has many samples per market)
     fares_m = (fares_m.groupby(["month","origin","dest"], as_index=False)
                         .agg(pax=("pax","sum"), rev=("rev","sum")))
 
-    # join T-100 RPMs; compute yield & avg fare 
+    # join T-100 RPMs; compute yield & avg fare
     seg_mkt = (seg.groupby(["month","origin","dest"], as_index=False)
                  .agg(RPMs=("RPMs","sum")))
 
@@ -108,7 +107,18 @@ def build_fact_fares(db1b_csv="DB1B_MARKET_2023.csv", carrier="WN"):
     # avg_fare = revenue / pax
     fares_m["avg_fare"] = np.where(fares_m["pax"] > 0, fares_m["rev"] / fares_m["pax"], np.nan)
 
-    out = fares_m[["month","origin","dest","yield_est","avg_fare","pax"]]
+    # --- coverage/confidence (NEW, minimal changes) ---
+    seg_coverage = (seg.groupby(["month","origin","dest"], as_index=False)
+                      .agg(pax_t100=("pax","sum")))
+    fares_m = fares_m.merge(seg_coverage, on=["month","origin","dest"], how="left")
+    fares_m["coverage"] = np.where(fares_m["pax_t100"] > 0, fares_m["pax"] / fares_m["pax_t100"], np.nan)
+    fares_m["confidence"] = pd.cut(
+        fares_m["coverage"],
+        bins=[-0.01, 0.25, 0.6, 1.01],
+        labels=["low", "medium", "high"]
+    )
+
+    out = fares_m[["month","origin","dest","yield_est","avg_fare","pax","coverage","confidence"]]
     out.to_csv(WORK/"fact_fares.csv", index=False)
     print(f"Wrote {WORK/'fact_fares.csv'} with {len(out)} rows (unique month+OD).")
 
