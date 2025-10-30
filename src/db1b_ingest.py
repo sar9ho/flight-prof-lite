@@ -107,16 +107,21 @@ def build_fact_fares(db1b_csv="DB1B_MARKET_2023.csv", carrier="WN"):
     # avg_fare = revenue / pax
     fares_m["avg_fare"] = np.where(fares_m["pax"] > 0, fares_m["rev"] / fares_m["pax"], np.nan)
 
-    # --- coverage/confidence (NEW, minimal changes) ---
+    # coverage/confidence
     seg_coverage = (seg.groupby(["month","origin","dest"], as_index=False)
-                      .agg(pax_t100=("pax","sum")))
+                    .agg(pax_t100=("pax","sum")))
     fares_m = fares_m.merge(seg_coverage, on=["month","origin","dest"], how="left")
-    fares_m["coverage"] = np.where(fares_m["pax_t100"] > 0, fares_m["pax"] / fares_m["pax_t100"], np.nan)
+
+    # missing/zero T-100 pax treated as 0 (aka low coverage)
+    pax_t100 = fares_m["pax_t100"].fillna(0.0)
+    fares_m["coverage"] = np.where(pax_t100 > 0, fares_m["pax"]/pax_t100, 0.0)
+
     fares_m["confidence"] = pd.cut(
-        fares_m["coverage"],
+        fares_m["coverage"].clip(0, 1.01),
         bins=[-0.01, 0.25, 0.6, 1.01],
         labels=["low", "medium", "high"]
     )
+
 
     out = fares_m[["month","origin","dest","yield_est","avg_fare","pax","coverage","confidence"]]
     out.to_csv(WORK/"fact_fares.csv", index=False)
