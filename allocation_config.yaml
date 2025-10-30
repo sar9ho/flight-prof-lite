@@ -1,0 +1,22 @@
+# Initial, conservative allocation weights (tune later)
+fuel:
+  driver: block_hours
+  burn_rate_hr:
+    B737-700: 800   # kg/hr (placeholder)
+    B737-800: 880
+    B737-8:   890
+
+labor:
+  weights:
+    block_hours: 0.7
+    departures:  0.3
+
+maintenance:
+  weights:
+    block_hours: 1.0
+    departures:  0.0
+
+station_other:
+  weights:
+    departures: 0.5
+    pax:        0.5

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Data (don’t commit raw dumps or generated outputs)
+data_raw/
+data_work/
+!data_work/.gitkeep
+
+# Docs: keep the MD memo, ignore the exported PDF
+docs/FP&A_Review_Memo.pdf
+
+# Tableau / cache
+*.twb
+*.twbx
+*.hyper
